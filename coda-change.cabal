@@ -2,7 +2,7 @@ name:          coda-change
 category:      Language
 version:       0.0.1
 license:       BSD2
-cabal-version: 2
+cabal-version: >=1.10
 author:        Edward A. Kmett
 maintainer:    Edward A. Kmett <ekmett@gmail.com>
 stability:     experimental
@@ -22,7 +22,6 @@ library
   ghc-options: -Wall
   exposed-modules: Coda.Syntax.Change
   other-modules:   Coda.Algebra.Zero
-                 , Coda.FingerTree
                  , Coda.Relative.Absolute
                  , Coda.Relative.Class
                  , Coda.Relative.Delta
@@ -33,3 +32,4 @@ library
                , text
                , hashable
                , profunctors
+               , fingertree

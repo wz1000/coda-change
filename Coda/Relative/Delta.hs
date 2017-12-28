@@ -23,10 +23,10 @@ module Coda.Relative.Delta
   , HasRelativeDelta
   ) where
 
-import Coda.FingerTree
 import Coda.Relative.Absolute
 import Coda.Relative.Class
 import Coda.Relative.Delta.Type
+import Data.FingerTree
 import Data.Text
 import Data.Text.Unsafe
 
@@ -52,7 +52,7 @@ instance HasDelta Text where
 instance HasDelta a => HasDelta (Absolute a) where
   delta (Absolute a) = delta a
 
-instance (Measured a, HasDelta (Measure a)) => HasDelta (FingerTree a) where
+instance (Measured v a, HasDelta v) => HasDelta (FingerTree v a) where
   delta = delta . measure
 
 --------------------------------------------------------------------------------
@@ -70,7 +70,7 @@ class (Monoid t, HasDelta t) => HasMonoidalDelta t where
 instance HasMonoidalDelta Delta
 instance HasMonoidalDelta Text
 instance HasMonoidalDelta a => HasMonoidalDelta (Absolute a)
-instance (Measured a, HasMonoidalDelta (Measure a)) => HasMonoidalDelta (FingerTree a)
+instance (Measured v a, HasMonoidalDelta v) => HasMonoidalDelta (FingerTree v a)
 
 --------------------------------------------------------------------------------
 -- Monotone deltas

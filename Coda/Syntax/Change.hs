@@ -5,6 +5,7 @@
 {-# language PatternSynonyms #-}
 {-# language FlexibleContexts #-}
 {-# language DeriveTraversable #-}
+{-# language MultiParamTypeClasses #-}
 {-# language FlexibleInstances #-}
 {-# language DefaultSignatures #-}
 {-# language OverloadedStrings #-}
@@ -26,11 +27,12 @@
 module Coda.Syntax.Change where
 
 import Coda.Algebra.Zero
-import Coda.FingerTree as FingerTree
+import Data.FingerTree hiding ((:<),(:>))
+import qualified Data.FingerTree as FingerTree
 import Coda.Relative.Class
 import Coda.Relative.Delta
 import Control.Applicative as Applicative
-import Control.Lens
+import Control.Lens hiding ((<|), (|>), (:<),(:>), Empty)
 import Control.Monad (MonadPlus(..), unless)
 import Control.Monad.Fail (MonadFail(fail))
 import Data.Default
@@ -187,12 +189,12 @@ instance Inverse Delta where
 -- Text Utilities
 --------------------------------------------------------------------------------
 
-foldMapWithPos :: forall a m. (Measured a, Monoid m) => (Measure a -> a -> m) -> FingerTree a -> m
-foldMapWithPos f = getConst . traverseWithPos (\v a -> Const (f v a) :: Const m (FingerTree a))
+foldMapWithPos :: forall a m v. (Measured v a, Monoid m) => (v -> a -> m) -> FingerTree v a -> m
+foldMapWithPos f = getConst . traverseWithPos (\v a -> Const (f v a) :: Const m (FingerTree v a))
 {-# inline foldMapWithPos #-}
 
 -- respects measure
-class (Measured t, HasDelta (Measure t)) => Splittable t where
+class Splittable t where
   splitDelta :: Delta -> t -> (t, t)
   splitDelta d t = (takeDelta d t, dropDelta d t)
   {-# inline splitDelta #-}
@@ -212,9 +214,9 @@ instance Splittable Delta where
     | i < j = (i,j - i)
     | otherwise = (j,0)
 
-instance Splittable a => Splittable (FingerTree a) where
+instance (Measured v a, Splittable a, HasDelta v) => Splittable (FingerTree v a) where
   splitDelta i xs = case search (\m _ -> i <= delta m) xs of
-    Position l (splitDelta (i - delta l) -> (el,er)) r -> (l :> el, er :< r) -- TODO: be more careful about empties
+    Position l (splitDelta (i - delta l) -> (el,er)) r -> (l |> el, er <| r) -- TODO: be more careful about empties
     OnLeft  -> (mempty,xs)
     OnRight -> (xs,mempty)
     Nowhere -> error "dropsDelta: Nowhere"
@@ -293,8 +295,7 @@ data Edit = Edit !Delta !Delta !Delta -- requirement and replacement
 instance Default Edit where
   def = Edit 0 0 0
 
-instance Measured Edit where
-  type Measure Edit = Grade
+instance Measured Grade Edit where
   measure (Edit n f t) = Grade (n + f) (n + t)
 
 -- @delta = delta . measure@
@@ -361,19 +362,32 @@ cpy n = fromEdit (Edit n 0 0)
 -- 2) all edits have at least one of the finger-trees non-empty
 --
 -- Changes are simplicial morphisms, monotone functions between finite sets of integers that start at 0
-data Change = Change !(FingerTree Edit) !Delta deriving (Eq,Ord,Show)
+data Change = Change !(FingerTree Grade Edit) !Delta deriving (Eq,Ord,Show)
+
+
+pattern Empty :: forall a v. Measured v a => FingerTree v a
+pattern Empty <- (viewl -> FingerTree.EmptyL) where
+        Empty = FingerTree.empty
+
+pattern (:<) :: forall a v. Measured v a
+  => a -> FingerTree v a -> FingerTree v a
+pattern x :< xs <- (viewl -> x FingerTree.:< xs) where
+        x :< xs = x <| xs
+
+pattern (:>) :: forall a v. Measured v a
+  => FingerTree v a -> a -> FingerTree v a
+pattern xs :> x <- (viewr -> xs FingerTree.:> x) where
+        xs :> x = xs |> x
+
+changePattern :: Change -> (FingerTree Grade Edit, Delta)
+changePattern (C0 d)      = (mempty, d)
+changePattern (CN e es d) = (e <| es, d)
 
 {-# complete C0, CN #-}
-{-# complete Change #-}
-
-changePattern :: Change -> (FingerTree Edit, Delta)
-changePattern (C0 d)      = (mempty, d)
-changePattern (CN e es d) = (e :< es, d)
-
 pattern C0 :: Delta -> Change
-pattern C0 d = Change EmptyTree d
+pattern C0 d = Change Empty d
 
-pattern CN :: Edit -> FingerTree Edit -> Delta -> Change
+pattern CN :: Edit -> FingerTree Grade Edit -> Delta -> Change
 pattern CN x xs d = Change (x :< xs) d
 
 
@@ -385,8 +399,7 @@ instance Relative Change where
 instance HasDelta Change where
   delta (Change es d) = delta es + d
 
-instance Measured Change where
-  type Measure Change = Grade
+instance Measured Grade Change where
   measure (Change es d) = measure es + Grade d d
 
 instance Inverse Change where
@@ -398,10 +411,10 @@ instance Semigroup Change where
   C0 0 <> rhs = rhs
   lhs <> C0 0 = lhs
   Change xs0 d0 <> Change ys0 e0 = go xs0 d0 ys0 e0 where
-    go EmptyTree 0 ys e = Change ys e
-    go EmptyTree d EmptyTree e = C0 (d+e)
-    go xs d EmptyTree e = Change xs (d+e)
-    go EmptyTree d (t :< ys) e = Change (rel d t <| ys) e
+    go Empty 0 ys e = Change ys e
+    go Empty d Empty e = C0 (d+e)
+    go xs d Empty e = Change xs (d+e)
+    go Empty d (t :< ys) e = Change (rel d t <| ys) e
     go (xs :> Edit n as bs) 0 (Edit 0 cs ds :< ys) e = Change ((xs |> Edit n (as <> cs) (bs <> ds)) <> ys) e
     go xs d (t :< ys) e = Change ((xs |> rel d t) <> ys) e
 
@@ -462,7 +475,7 @@ instance Changeable Change where
   change (Change xs0 d0) = go xs0 d0 where
     -- TODO: figure out an optimal split ordering by adding a cost to each edit
     go (e :< es) d (splitDelta (delta (inverseEdit e)) -> (l,r)) = (<>) <$> edit e l <*> go es d r
-    go EmptyTree d c = do
+    go Empty d c = do
       unless (delta c == d) $ fail $ "changeChange: leftover mismatch " ++ show (delta c,d)
       pure c
 
