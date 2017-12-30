@@ -434,9 +434,11 @@ class Changeable a where
 -- | /O(log(min(k,n-k)))/ where there are @n@ edits, @k@ of which occur before the position in question
 instance Changeable Delta where
   change (Change xs d) i = case search (\m _ -> i < delta m) xs of
-    Position (measure -> Grade o n) _ _ -> pure (n + i - o)
+    Position (measure -> Grade o n) (Edit a _ _) _
+      | i - o <= a -> pure (n + i - o)
+      | otherwise  -> fail "changePos: deleted position"
     OnRight
-      | Grade o n <- measure xs, res <- i - o, res <= d -> pure (n + res)
+      | Grade o n <- measure xs, res <- i - o, res < d -> pure (n + res)
       | otherwise -> fail "changePos: Past end"
     OnLeft -> fail "changePos: index < 0"
     Nowhere -> fail "changePos: Nowhere"
