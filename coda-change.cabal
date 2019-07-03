@@ -21,7 +21,8 @@ library
   default-language: Haskell2010
   ghc-options: -Wall
   exposed-modules: Coda.Syntax.Change
-  other-modules:   Coda.Algebra.Zero
+                 , Coda.Diff
+                 , Coda.Algebra.Zero
                  , Coda.Relative.Absolute
                  , Coda.Relative.Class
                  , Coda.Relative.Delta
@@ -33,3 +34,4 @@ library
                , hashable
                , profunctors
                , fingertree
+               , Diff

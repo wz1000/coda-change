@@ -69,11 +69,16 @@ instance Read Error where
   readPrec = fail "Error"
   readListPrec = readListPrecDefault
 
+
 -- | This occupies an uncomfortable middle ground between Maybe and Either
 data Partial a
   = OK !a
   | Fail Error
   deriving (Eq, Ord, Read, Functor, Foldable, Traversable)
+
+partialToMaybe :: Partial a -> Maybe a
+partialToMaybe (OK a) = Just a
+partialToMaybe _ = Nothing
 
 instance Show a => Show (Partial a) where
   showsPrec d (OK a) = showParen (d > 10) $ showString "OK " . showsPrec 11 a
@@ -251,9 +256,10 @@ pretty e = traverseOf_ each putStrLn (pp e)
 data Grade = Grade !Delta !Delta
   deriving (Eq,Ord,Show,Read)
 
+instance Semigroup Grade where
+  (Grade a b) <> (Grade c d) = Grade (a + c) (b + d)
 instance Monoid Grade where
   mempty = Grade 0 0
-  mappend (Grade a b) (Grade c d) = Grade (a + c) (b + d)
 
 -- size of the domain
 instance HasDelta Grade where
@@ -424,9 +430,10 @@ instance Monoid Change where
 
 newtype App f a = App { runApp :: f a } deriving (Functor,Applicative)
 
+instance (Applicative f, Semigroup a) => Semigroup (App f a) where
+  (<>) = liftA2 (<>)
 instance (Applicative f, Monoid a) => Monoid (App f a) where
   mempty = pure mempty
-  mappend = liftA2 mappend
 
 class Changeable a where
   change :: Change -> a -> Partial a
@@ -435,7 +442,7 @@ class Changeable a where
 instance Changeable Delta where
   change (Change xs d) i = case search (\m _ -> i < delta m) xs of
     Position (measure -> Grade o n) (Edit a _ _) _
-      | i - o <= a -> pure (n + i - o)
+      | i - o < a -> pure (n + i - o)
       | otherwise  -> fail "changePos: deleted position"
     OnRight
       | Grade o n <- measure xs, res <- i - o, res < d -> pure (n + res)
