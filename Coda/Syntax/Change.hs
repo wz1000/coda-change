@@ -40,6 +40,8 @@ import Data.Semigroup
 import Prelude hiding (fail)
 import Text.Read
 
+import Debug.Trace
+
 --------------------------------------------------------------------------------
 -- Inverse Semigroups
 --------------------------------------------------------------------------------
@@ -445,7 +447,7 @@ instance Changeable Delta where
       | i - o < a -> pure (n + i - o)
       | otherwise  -> fail "changePos: deleted position"
     OnRight
-      | Grade o n <- measure xs, res <- i - o -> pure (n + res)
+      | Grade o n <- measure xs, res <- i - o, res < d -> pure (n + res)
       | otherwise -> fail "changePos: Past end"
     OnLeft -> fail "changePos: index < 0"
     Nowhere -> fail "changePos: Nowhere"
@@ -470,20 +472,27 @@ instance Splittable Change where
   splitDelta i c@(Change xs d) = case search (\m _ -> i <= delta m) xs of
     Nowhere -> error "splitChange: Nowhere"
     OnLeft -> (mempty, c)
-    OnRight | i' <- i - delta xs -> (Change xs i', cpy (d-i))
+    OnRight | i' <- i - delta xs -> (Change xs i', cpy (max (d-i) 0))
     Position l (Edit n f t) r
       | j < n -> (Change l j, Change (Edit (n-j) f t <| r) d)
       | (fl,fr) <- splitDelta (j - n) f -> (Change l n <> del fl <> ins t, del fr <> Change r d)
       where j = i - delta l
 
 instance Editable Change where
-  edit (Edit d f t) (splitDelta d -> (l,r)) = change r t <&> \t' -> l <> del f <> ins t'
+  edit (traceAnnot "editEdit" -> Edit d f t) (traceAnnot "editSplitOut" . splitDelta d . traceAnnot "editSplitIn" -> (l,r)) =
+    if r == mempty
+      then pure $ l <> del f <> ins t
+      else change r t <&> \t' -> l <> del f <> ins t'
+
+
+traceAnnot :: Show a => String -> a -> a
+traceAnnot l x = trace (l++": "++show x) x
 
 -- | @change f g@ provides @g . f@
 instance Changeable Change where
   change (Change xs0 d0) = go xs0 d0 where
     -- TODO: figure out an optimal split ordering by adding a cost to each edit
-    go (e :< es) d (splitDelta (delta (inverseEdit e)) -> (l,r)) = (<>) <$> edit e l <*> go es d r
+    go (e :< es) d (traceAnnot "splitDeltaOut" . splitDelta (delta (inverseEdit e)) . traceAnnot "splitDeltaIn" -> (l,r)) = (<>) <$> edit e l <*> go es d r
     go Empty d c = do
       unless (delta c == d) $ fail $ "changeChange: leftover mismatch " ++ show (delta c,d)
       pure c
