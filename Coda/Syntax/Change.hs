@@ -480,10 +480,11 @@ instance Splittable Change where
 
 instance Editable Change where
   edit (traceAnnot "editEdit" -> Edit d f t) (traceAnnot "editSplitOut" . splitDelta d . traceAnnot "editSplitIn" -> (l,r)) =
-    if r == mempty
-      then pure $ l <> del f <> ins t
-      else change r t <&> \t' -> l <> del f <> ins t'
+    pure (l <> del f <> ins t')
+    where t' = t + (o-i)
+          Grade i o = measure r
 
+p2 (pp -> (a,b)) = putStrLn a >> putStrLn b
 
 traceAnnot :: Show a => String -> a -> a
 traceAnnot l x = trace (l++": "++show x) x
