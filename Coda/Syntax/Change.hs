@@ -445,7 +445,7 @@ instance Changeable Delta where
       | i - o < a -> pure (n + i - o)
       | otherwise  -> fail "changePos: deleted position"
     OnRight
-      | Grade o n <- measure xs, res <- i - o, res < d -> pure (n + res)
+      | Grade o n <- measure xs, res <- i - o -> pure (n + res)
       | otherwise -> fail "changePos: Past end"
     OnLeft -> fail "changePos: index < 0"
     Nowhere -> fail "changePos: Nowhere"
